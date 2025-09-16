@@ -93,10 +93,13 @@ object DockerBuild {
     buildArguments: Map[String, String],
     log: Logger
   ): ImageId = {
-    val imageId = build(dockerfilePath, dockerPath, buildOptions, buildArguments, log)
+    val imageId = build(dockerfilePath, dockerPath, buildOptions, buildArguments, imageNames, log)
 
-    imageNames.foreach { name =>
-      DockerTag(imageId, name, dockerPath, log)
+    // Tags are already created when building multi-platform images
+    if (buildOptions.platforms.size <= 1) {
+      imageNames.foreach { name =>
+        DockerTag(imageId, name, dockerPath, log)
+      }
     }
 
     imageId
@@ -107,6 +110,7 @@ object DockerBuild {
     dockerPath: String,
     buildOptions: BuildOptions,
     buildArguments: Map[String, String],
+    imageNames: Seq[ImageName],
     log: Logger
   ): ImageId = {
     val dockerfileAbsolutePath = dockerfilePath.getAbsoluteFile
@@ -114,7 +118,11 @@ object DockerBuild {
 
     def runBuild(buildKitSupport: Boolean): Int = {
       val buildX = if (buildOptions.platforms.isEmpty) Nil else List("buildx")
-      val load = if (buildOptions.platforms.isEmpty) Nil else List("--load")
+      val loadOrPush = buildOptions.platforms.size match {
+        case 0 => Nil
+        case 1 => List("--load")
+        case 2 => "--push" :: imageNames.map(name => s"--tag=$name").toList
+      }
       val buildOptionFlags = generateBuildOptionFlags(buildOptions)
       val buildKitFlags = if (buildKitSupport) List("--progress=plain") else Nil
       val buildArgumentFlags = buildArguments.toList.flatMap {
@@ -127,7 +135,7 @@ object DockerBuild {
         buildOptionFlags :::
         buildKitFlags :::
         buildArgumentFlags :::
-        load :::
+        loadOrPush :::
         "--file" ::
         dockerfileAbsolutePath.getPath ::
         dockerfileAbsolutePath.getParentFile.getPath ::

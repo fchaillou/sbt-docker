@@ -22,17 +22,26 @@ object DockerSettings {
       DockerBuild(dockerfile, DefaultDockerfileProcessor, imageNames, buildOptions, buildArguments, stageDir, dockerPath, log)
     },
     dockerPush := {
+      val buildOptions = (docker / DockerKeys.buildOptions).value
       val log = Keys.streams.value.log
       val dockerPath = (docker / DockerKeys.dockerPath).value
       val imageNames = (docker / DockerKeys.imageNames).value
 
-      DockerPush(dockerPath, imageNames, log)
+      if (buildOptions.platforms.size > 1) {
+        log.info("Pushing is done during build for multi-platform images, skipping 'docker push'...")
+        Map.empty[ImageName, ImageDigest]
+      } else {
+        DockerPush(dockerPath, imageNames, log)
+      }
     },
     dockerBuildAndPush := Def.taskDyn {
+      val buildOptions = (docker / DockerKeys.buildOptions).value
       docker.value
-      Def.task {
-        dockerPush.value
-      }
+      if (buildOptions.platforms.size <= 1) {
+        Def.task {
+          dockerPush.value
+        }
+      } else Def.task(Map.empty[ImageName, ImageDigest])
     }.value,
     docker / dockerfile := {
       sys.error("""A Dockerfile is not defined. Please define one with `docker / dockerfile`
